@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { DEPARTMENT_WORKLOAD_THRESHOLD, getActiveQueueCount, getDepartmentWorkload } from './departmentWorkload'
+import { getDepartmentWorkload } from './departmentWorkload'
 
 describe('getDepartmentWorkload', () => {
-  it('groups active tickets by department', () => {
+  it('counts open tickets for each assigned department', () => {
     expect(getDepartmentWorkload([
       { department: 'Roads', status: 'Pending' },
       { department: 'Roads', status: 'In Progress' },
@@ -20,39 +20,28 @@ describe('getDepartmentWorkload', () => {
     ])).toEqual([])
   })
 
-  it('groups tickets without a department as Unassigned', () => {
+  it('excludes tickets without an assigned department', () => {
     expect(getDepartmentWorkload([
       { department: '', status: 'Pending' },
       { status: 'In Progress' },
-    ])).toEqual([{ department: 'Unassigned', count: 2, isOverCapacity: false }])
+      { department: '   ', status: 'Reopened' },
+    ])).toEqual([])
   })
 
-  it('flags only departments with more than 20 active tickets', () => {
+  it('highlights only departments with more than 20 open tickets', () => {
     const complaints = [
-      ...Array.from({ length: DEPARTMENT_WORKLOAD_THRESHOLD }, () => ({ department: 'Roads', status: 'Pending' })),
-      ...Array.from({ length: DEPARTMENT_WORKLOAD_THRESHOLD + 1 }, () => ({ department: 'Water', status: 'In Progress' })),
+      ...Array.from({ length: 20 }, () => ({ department: 'Roads', status: 'Pending' })),
+      ...Array.from({ length: 21 }, () => ({ department: 'Water', status: 'In Progress' })),
     ]
+
     expect(getDepartmentWorkload(complaints)).toEqual([
       { department: 'Water', count: 21, isOverCapacity: true },
       { department: 'Roads', count: 20, isOverCapacity: false },
     ])
   })
 
-  it('handles an empty queue', () => {
+  it('returns an empty list when there are no assigned open tickets', () => {
     expect(getDepartmentWorkload()).toEqual([])
     expect(getDepartmentWorkload([])).toEqual([])
-  })
-})
-
-describe('getActiveQueueCount', () => {
-  it('counts Pending, Reopened, and In Progress tickets only', () => {
-    expect(getActiveQueueCount([
-      { status: 'Pending' }, { status: 'In Progress' }, { status: 'Reopened' },
-      { status: 'Resolved' }, { status: 'Rejected' },
-    ])).toBe(3)
-  })
-
-  it('returns zero for an empty queue', () => {
-    expect(getActiveQueueCount([])).toBe(0)
   })
 })
