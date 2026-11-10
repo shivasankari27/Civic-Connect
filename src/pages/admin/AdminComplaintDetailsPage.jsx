@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import toast from 'react-hot-toast'
+import ComplaintAudioPlayer from '@/components/citizen/ComplaintAudioPlayer'
 
 const statusVariant = {
   Resolved: 'success',
@@ -507,6 +508,8 @@ export function AdminComplaintDetailsPage() {
                   <p className="mt-1 text-gray-700 dark:text-gray-300">{complaint.reopenReason}</p>
                 </div>
               )}
+
+              <ComplaintAudioPlayer audioNote={complaint.audioNote} />
 
               <div className="mt-4 flex items-start gap-2 text-sm text-gray-500 dark:text-gray-400">
                 <MapPin className="h-4 w-4 mt-0.5 shrink-0" />

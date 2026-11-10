@@ -24,8 +24,8 @@ export async function logComplaintEvent(issueId, eventFields) {
   return await addDoc(collection(db, `issues/${issueId}/events`), eventData)
 }
 
-export function addComplaintEventToBatch(batch, issueId, eventFields) {
-  const eventRef = doc(collection(db, `issues/${issueId}/events`))
+export function addComplaintEventToBatch(batch, issueId, eventFields, customDb = db) {
+  const eventRef = doc(collection(customDb, `issues/${issueId}/events`))
   const eventData = buildComplaintEvent(eventFields)
   batch.set(eventRef, eventData)
   return eventRef

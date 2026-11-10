@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Flag, Shield, BarChart3, Users, Clock, ArrowRight, Star, AlertTriangle } from 'lucide-react'
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore'
 import { db } from '@/firebase/services'
+import { useAuth } from '@/hooks/useAuth'
 import { getDisplayId } from '@/firebase/complaintId'
 import { isSlaBreached } from '@/utils/sla'
 import { SlaBadge } from '@/components/common/SlaBadge'
@@ -10,6 +11,11 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { BulkActionsToolbar } from '@/components/admin/BulkActionsToolbar'
+
+const ComplaintsMap = lazy(() =>
+  import('@/components/common/ComplaintsMap').then((m) => ({ default: m.ComplaintsMap }))
+)
 
 const statusVariant = {
   Pending: 'destructive',
@@ -23,6 +29,10 @@ export function AdminDashboardPage() {
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
   const [slaFilter, setSlaFilter] = useState('all')
+  const [activeTab, setActiveTab] = useState('overview')
+  const [selectedIds, setSelectedIds] = useState([])
+  const selectAllRef = useRef(null)
+  const { user } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -79,6 +89,40 @@ export function AdminDashboardPage() {
   }, [complaints, slaFilter])
 
   const recentReports = filteredReports.slice(0, 5)
+  const displayedComplaints = recentReports
+
+  const isAllSelected = useMemo(() => {
+    if (displayedComplaints.length === 0) return false
+    return displayedComplaints.every((r) => selectedIds.includes(r.id))
+  }, [displayedComplaints, selectedIds])
+
+  const isIndeterminate = useMemo(() => {
+    const count = displayedComplaints.filter((r) => selectedIds.includes(r.id)).length
+    return count > 0 && count < displayedComplaints.length
+  }, [displayedComplaints, selectedIds])
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = isIndeterminate
+    }
+  }, [isIndeterminate])
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const displayedIdSet = new Set(displayedComplaints.map((r) => r.id))
+      setSelectedIds((prev) => prev.filter((id) => !displayedIdSet.has(id)))
+    } else {
+      const ids = displayedComplaints.map((r) => r.id)
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...ids])))
+    }
+  }
+
+  const handleToggleSelect = (id, e) => {
+    e.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    )
+  }
 
   const statCards = [
     { label: 'Total Complaints', value: stats.total, icon: Flag, color: 'text-primary-600 bg-primary-50 dark:bg-primary-900/30' },
@@ -94,25 +138,61 @@ export function AdminDashboardPage() {
         description="Overview of all civic reports"
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-        {statCards.map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                    {loading ? '-' : stat.value}
-                  </p>
-                </div>
-                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${stat.color}`}>
-                  <stat.icon className="h-6 w-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Admin Dashboard Tabs */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6 gap-2">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`py-2 px-4 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'overview'
+              ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+          }`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('map')}
+          className={`py-2 px-4 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'map'
+              ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+          }`}
+        >
+          GIS Map
+        </button>
       </div>
+
+      {activeTab === 'map' ? (
+        <Suspense
+          fallback={
+            <div className="h-96 rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center text-gray-500">
+              Loading map...
+            </div>
+          }
+        >
+          <ComplaintsMap complaints={complaints} isAdmin={true} />
+        </Suspense>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+            {statCards.map((stat) => (
+              <Card key={stat.label}>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</p>
+                      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                        {loading ? '-' : stat.value}
+                      </p>
+                    </div>
+                    <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${stat.color}`}>
+                      <stat.icon className="h-6 w-6" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -156,18 +236,50 @@ export function AdminDashboardPage() {
               </div>
             ) : (
               <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 mb-1 border-b border-gray-100 dark:border-gray-800 text-xs text-gray-500">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all complaints"
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                      checked={isAllSelected}
+                      ref={selectAllRef}
+                      onChange={handleToggleSelectAll}
+                    />
+                    <span>Select All ({displayedComplaints.length})</span>
+                  </label>
+                  {selectedIds.length > 0 && (
+                    <span className="font-medium text-primary-600 dark:text-primary-400">
+                      {selectedIds.length} selected
+                    </span>
+                  )}
+                </div>
                 {recentReports.map((r) => (
                   <div
                     key={r.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
+                    className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${
+                      selectedIds.includes(r.id)
+                        ? 'border-primary-500 bg-primary-50/40 dark:bg-primary-950/30'
+                        : 'border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                    }`}
                     onClick={() => navigate(`/admin/reports/${r.id}`)}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-mono text-gray-400 dark:text-gray-500">{getDisplayId(r)}</p>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate mt-0.5">{r.title}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        {r.category} &middot; {r.createdAt?.toDate?.().toLocaleDateString() || '-'}
-                      </p>
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select complaint ${getDisplayId(r)}`}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer shrink-0"
+                        checked={selectedIds.includes(r.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleToggleSelect(r.id, e)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-mono text-gray-400 dark:text-gray-500">{getDisplayId(r)}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate mt-0.5">{r.title}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {r.category} &middot; {r.department || 'Unassigned'} &middot; {r.createdAt?.toDate?.().toLocaleDateString() || '-'}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0 ml-3 justify-end">
                       <SlaBadge complaint={r} />
@@ -230,6 +342,15 @@ export function AdminDashboardPage() {
           </CardContent>
         </Card>
       </div>
+    </>
+  )}
+      <BulkActionsToolbar
+        selectedIds={selectedIds}
+        complaints={complaints}
+        onClearSelection={() => setSelectedIds([])}
+        onSuccess={() => setSelectedIds([])}
+        actorUid={user?.uid}
+      />
     </div>
   )
 }

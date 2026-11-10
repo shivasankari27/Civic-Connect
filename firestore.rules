@@ -24,6 +24,23 @@ service cloud.firestore {
       allow update: if isAuthenticated() && request.auth.uid == userId &&
                     request.resource.data.role == resource.data.role;
       allow delete: if false;
+
+      match /offlineComplaintReceipts/{localId} {
+        function matchesUploadedComplaint() {
+          let issuePath = /databases/$(database)/documents/issues/$(localId);
+          let uploaded = getAfter(issuePath);
+          return uploaded.data.reportedBy == userId &&
+                 (!exists(issuePath) || uploaded.data == get(issuePath).data);
+        }
+
+        allow get: if isAuthenticated() && request.auth.uid == userId;
+        // A legacy upload can be recorded without rewriting its saved complaint.
+        allow create: if isAuthenticated() && request.auth.uid == userId &&
+                      request.resource.data.keys().hasOnly(['createdAt']) &&
+                      request.resource.data.createdAt == request.time &&
+                      matchesUploadedComplaint();
+        allow list, update, delete: if false;
+      }
     }
 
     match /issues/{issueId} {

@@ -2,30 +2,54 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   validate:
-    name: Lint & Build Validation
+    name: Lint, Build & Lighthouse CI
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Synchronize npm lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Run lint
         run: npm run lint
 
-      - name: Run build
+      - name: Run tests
+        run: npm test
+
+      - name: Build application
         run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ci-placeholder
+          VITE_FIREBASE_AUTH_DOMAIN: localhost
+          VITE_FIREBASE_PROJECT_ID: civicconnect-ci
+          VITE_FIREBASE_STORAGE_BUCKET: civicconnect-ci.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+          VITE_FIREBASE_APP_ID: "1:000000000000:web:0000000000000000000000"
+
+      - name: Report bundle size
+        run: npm run report:bundle-size
+
+      - name: Verify PWA
+        run: node scripts/verify-pwa.mjs
+
+      - name: Run Lighthouse CI
+        run: npx lhci autorun

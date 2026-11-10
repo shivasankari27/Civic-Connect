@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { AlertTriangle, CheckCircle, Clock, Flag, Plus, FileWarning, Pencil } from 'lucide-react'
@@ -15,6 +15,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import CommunityFeed from '@/components/citizen/CommunityFeed'
+
+const ComplaintsMap = lazy(() =>
+  import('@/components/common/ComplaintsMap').then((m) => ({ default: m.ComplaintsMap }))
+)
 import {
   Dialog,
   DialogContent,
@@ -174,10 +178,30 @@ export function DashboardPage() {
         >
           Community Feed
         </button>
+        <button
+          onClick={() => setActiveTab('map')}
+          className={`py-2 px-4 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'map'
+              ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+          }`}
+        >
+          GIS Map
+        </button>
       </div>
 
       {activeTab === 'community' ? (
         <CommunityFeed />
+      ) : activeTab === 'map' ? (
+        <Suspense
+          fallback={
+            <div className="h-96 rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center text-gray-500">
+              Loading map...
+            </div>
+          }
+        >
+          <ComplaintsMap complaints={complaints} />
+        </Suspense>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">

@@ -1,0 +1,52 @@
+
+{
+  "ci": {
+    "collect": {
+      "url": [
+        "http://127.0.0.1:4174/"
+      ],
+      "numberOfRuns": 3,
+      "startServerCommand": "node ./node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 4174 --strictPort",
+      "startServerReadyPattern": "http://127\\.0\\.0\\.1",
+      "startServerReadyTimeout": 120000
+    },
+    "assert": {
+      "assertions": {
+        "categories:accessibility": [
+          "error",
+          {
+            "minScore": 0.9
+          }
+        ],
+        "categories:performance": [
+          "error",
+          {
+            "minScore": 0.7
+          }
+        ],
+        "first-contentful-paint": [
+          "warn",
+          {
+            "maxNumericValue": 4000
+          }
+        ],
+        "largest-contentful-paint": [
+          "warn",
+          {
+            "maxNumericValue": 4000
+          }
+        ],
+        "cumulative-layout-shift": [
+          "warn",
+          {
+            "maxNumericValue": 0.1
+          }
+        ]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": "./.lighthouseci"
+    }
+  }
+}

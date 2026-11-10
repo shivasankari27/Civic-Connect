@@ -30,8 +30,8 @@ export async function createNotification(fields) {
 }
 
 // Queues the notification on an existing writeBatch so it commits atomically with the caller's other writes.
-export function addNotificationToBatch(batch, fields) {
-  batch.set(doc(collection(db, 'notifications')), buildNotification(fields))
+export function addNotificationToBatch(batch, fields, customDb = db) {
+  batch.set(doc(collection(customDb, 'notifications')), buildNotification(fields))
 }
 
 let messagingPromise = null

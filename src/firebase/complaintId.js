@@ -8,7 +8,8 @@ function formatId(num) {
   return `CMP-${year}-${String(num).padStart(4, '0')}`
 }
 
-async function allocateComplaintId(transaction, ref) {
+export async function allocateComplaintId(transaction) {
+  const ref = doc(db, COUNTER_PATH)
   const snap = await transaction.get(ref)
   let nextNum = 1
   if (snap.exists()) {
@@ -19,20 +20,18 @@ async function allocateComplaintId(transaction, ref) {
 }
 
 export async function generateComplaintId() {
-  const ref = doc(db, COUNTER_PATH)
-  return runTransaction(db, transaction => allocateComplaintId(transaction, ref))
+  return runTransaction(db, allocateComplaintId)
 }
 
 // The complaint and counter share one read set and commit. A competing backfill
 // retries against the winning complaint ID instead of allocating another one.
 export async function ensureComplaintId(issueId) {
   const issueRef = doc(db, 'issues', issueId)
-  const counterRef = doc(db, COUNTER_PATH)
   return runTransaction(db, async transaction => {
     const issue = await transaction.get(issueRef)
     if (!issue.exists()) throw new Error('Complaint no longer exists')
     if (issue.data().complaintId) return issue.data().complaintId
-    const complaintId = await allocateComplaintId(transaction, counterRef)
+    const complaintId = await allocateComplaintId(transaction)
     transaction.update(issueRef, { complaintId })
     return complaintId
   })

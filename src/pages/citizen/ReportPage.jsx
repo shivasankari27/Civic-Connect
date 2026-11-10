@@ -17,7 +17,12 @@ import { endorseComplaint } from '@/firebase/endorseComplaint'
 import { generateComplaintId, getDisplayId } from '@/firebase/complaintId'
 import { addNotificationToBatch } from '@/firebase/notifications'
 import { addComplaintEventToBatch } from '@/firebase/complaintEvents'
-import { validateComplaintPhoto, uploadComplaintPhoto } from '@/firebase/storage'
+import {
+  validateComplaintPhoto,
+  uploadComplaintPhoto,
+  uploadComplaintAudio,
+} from '@/firebase/storage'
+import VoiceRecorder from '@/components/citizen/VoiceRecorder'
 import { useAuth } from '@/hooks/useAuth'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -136,6 +141,9 @@ export function ReportPage() {
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
   const fileInputRef = useRef(null)
+
+  // Voice note state
+  const [voiceNote, setVoiceNote] = useState(null)
 
   // Duplicate detection state
   const [checkingDuplicates, setCheckingDuplicates] = useState(false)
@@ -339,39 +347,72 @@ export function ReportPage() {
       return
     }
 
+    // Voice notes need an internet connection because they are uploaded to Firebase Storage.
+    if (!navigator.onLine && voiceNote?.blob) {
+      toast.error('Voice notes require an internet connection. Reconnect or remove the voice note before submitting.')
+      return
+    }
+
     // Immediately lock submission to prevent double-clicks
     isSubmittingRef.current = true
     setSubmitting(true)
 
-    
-try {
-  // Save complaint locally when the device is offline.
-  if (!navigator.onLine) {
-    await saveOfflineComplaint({
-      title,
-      description,
-      category,
-      address,
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
-      userId: user.uid,
-    })
+    try {
+      // Save complaint locally when the device is offline.
+      if (!navigator.onLine) {
+        await saveOfflineComplaint({
+          title,
+          description,
+          category,
+          address,
+          latitude: latitude ? parseFloat(latitude) : null,
+          longitude: longitude ? parseFloat(longitude) : null,
+          userId: user.uid,
+        })
 
-    recordSubmissionTimestamp(user.uid, Date.now())
-    setCooldownRemaining(COOLDOWN_SECONDS)
+        recordSubmissionTimestamp(user.uid, Date.now())
+        setCooldownRemaining(COOLDOWN_SECONDS)
 
-    isSubmittingRef.current = false
-    setSubmitting(false)
+        isSubmittingRef.current = false
+        setSubmitting(false)
 
-    toast.success(
-      'You are offline. Your complaint has been saved and is waiting to sync.'
-    )
+        toast.success(
+          'You are offline. Your complaint has been saved and is waiting to sync.'
+        )
 
-    navigate('/my-reports')
-    return
-  }
+        navigate('/my-reports')
+        return
+      }
 
-  // Existing online duplicate-check and Firestore submission logic continues below.
+      // Generate the public complaint ID before uploading any evidence.
+      const complaintId = await generateComplaintId()
+
+      // Upload optional photo and voice evidence without changing the existing photo helpers.
+      const [photoUpload, audioUpload] = await Promise.all([
+        photoFile
+          ? uploadComplaintPhoto(photoFile, complaintId)
+          : Promise.resolve(null),
+        voiceNote?.blob
+          ? uploadComplaintAudio(
+              voiceNote.blob,
+              complaintId,
+              voiceNote.durationSeconds
+            )
+          : Promise.resolve(null),
+      ])
+
+      const imageUrl = photoUpload?.downloadUrl || null
+      const photos = photoUpload ? [photoUpload] : []
+      const audioNote = audioUpload
+        ? {
+            url: audioUpload.downloadUrl,
+            path: audioUpload.path,
+            filename: audioUpload.filename,
+            durationSeconds: audioUpload.durationSeconds,
+            contentType: audioUpload.contentType,
+          }
+        : null
+
       // Complaint and admin notification commit together, so a failed notification
       // can't leave behind a saved complaint that the citizen then re-submits.
       const batch = writeBatch(db)
@@ -387,8 +428,9 @@ try {
         status: 'Pending',
         department: '',
         reportedBy: user.uid,
-        imageUrl: imageUrl || null,
-        photos: photos || [],
+        imageUrl,
+        photos,
+        audioNote,
         endorsedBy: [],
         endorsementCount: 0,
         createdAt: serverTimestamp(),
@@ -421,7 +463,7 @@ try {
       navigate('/my-reports')
     } catch (err) {
       console.error('Complaint submission failed:', err)
-      toast.error('Failed to submit complaint. Please try again.')
+      toast.error(err?.message || 'Failed to submit complaint. Please try again.')
       isSubmittingRef.current = false
       setSubmitting(false)
     }
@@ -478,6 +520,17 @@ try {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Voice Note (Optional, up to 60 seconds)</Label>
+                <VoiceRecorder
+                  onRecordingComplete={setVoiceNote}
+                  disabled={submitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Record an audio description if you prefer not to type everything.
+                </p>
               </div>
 
               <div className="space-y-2">

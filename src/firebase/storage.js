@@ -1,3 +1,4 @@
+
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from './services'
 
@@ -194,3 +195,109 @@ export async function uploadComplaintPhoto(file, complaintId, customStorage = st
   }
 }
 
+// ============================================================
+// AUDIO RECORDING CONFIGURATION
+// ============================================================
+
+export const MAX_AUDIO_DURATION_SECONDS = 60
+
+export const ALLOWED_AUDIO_TYPES = [
+  'audio/webm',
+  'audio/ogg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/mpeg',
+  'audio/aac',
+]
+
+/**
+ * Validates a complaint voice recording.
+ */
+export function validateComplaintAudio(audioBlob, durationSeconds) {
+  if (!audioBlob) {
+    return { valid: false, error: 'Please record an audio note.' }
+  }
+
+  if (audioBlob.size === 0) {
+    return { valid: false, error: 'The audio recording is empty.' }
+  }
+
+  const mimeType = (audioBlob.type || '').toLowerCase().split(';')[0].trim()
+
+  if (!ALLOWED_AUDIO_TYPES.includes(mimeType)) {
+    return {
+      valid: false,
+      error: 'Unsupported audio format. Please record in a supported audio format.',
+    }
+  }
+
+  if (
+    durationSeconds !== undefined &&
+    (!Number.isFinite(durationSeconds) ||
+      durationSeconds <= 0 ||
+      durationSeconds > MAX_AUDIO_DURATION_SECONDS)
+  ) {
+    return {
+      valid: false,
+      error: 'Audio recording must be between 1 and 60 seconds.',
+    }
+  }
+
+  return { valid: true }
+}
+
+/**
+ * Uploads a complaint voice recording to Firebase Storage.
+ * Path: complaint-audio/{complaintId}/{filename}
+ */
+export async function uploadComplaintAudio(
+  audioBlob,
+  complaintId,
+  durationSeconds,
+  customStorage = storage
+) {
+  if (!complaintId) {
+    throw new Error('A valid complaint ID is required for audio upload.')
+  }
+
+  const validation = validateComplaintAudio(audioBlob, durationSeconds)
+
+  if (!validation.valid) {
+    throw new Error(validation.error)
+  }
+
+  const mimeType = (audioBlob.type || '').toLowerCase().split(';')[0].trim()
+
+  const extensions = {
+    'audio/webm': 'webm',
+    'audio/ogg': 'ogg',
+    'audio/mp4': 'm4a',
+    'audio/wav': 'wav',
+    'audio/x-wav': 'wav',
+    'audio/mpeg': 'mp3',
+    'audio/aac': 'aac',
+  }
+
+  const extension = extensions[mimeType]
+  const filename = sanitizeFilename(
+    `voice-note-${Date.now()}.${extension}`
+  )
+
+  const storagePath = `complaint-audio/${complaintId}/${filename}`
+  const storageRef = ref(customStorage, storagePath)
+
+  await uploadBytes(storageRef, audioBlob, {
+    contentType: mimeType,
+  })
+
+  const downloadUrl = await getDownloadURL(storageRef)
+
+  return {
+    downloadUrl,
+    path: storagePath,
+    filename,
+    durationSeconds,
+    contentType: mimeType,
+  }
+}

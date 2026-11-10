@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Flag, Search } from 'lucide-react'
 import { collection, query, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import { db } from '@/firebase/services'
+import { useAuth } from '@/hooks/useAuth'
 import { getDisplayId } from '@/firebase/complaintId'
 import { isUnconfirmedEmpty } from '@/firebase/snapshot'
 import { toCsv, downloadCsv, formatDateStamp } from '@/utils/csv'
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SlaBadge } from '@/components/common/SlaBadge'
 import { isSlaBreached } from '@/utils/sla'
+import { BulkActionsToolbar } from '@/components/admin/BulkActionsToolbar'
 
 const statusVariant = {
   Pending: 'destructive',
@@ -80,6 +82,9 @@ export function AdminReportsPage() {
   const [slaFilter, setSlaFilter] = useState('all')
   const [departmentFilter, setDepartmentFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [selectedIds, setSelectedIds] = useState([])
+  const selectAllRef = useRef(null)
+  const { user } = useAuth()
   const [userCache, setUserCache] = useState({})
   const cacheRef = useRef({})
   const navigate = useNavigate()
@@ -168,6 +173,35 @@ export function AdminReportsPage() {
     toast.success(`Exported ${filtered.length} report${filtered.length === 1 ? '' : 's'}`)
   }
 
+  const isAllSelected = filtered.length > 0 && filtered.every((c) => selectedIds.includes(c.id))
+  const isIndeterminate = useMemo(() => {
+    const selectedCount = filtered.filter((c) => selectedIds.includes(c.id)).length
+    return selectedCount > 0 && selectedCount < filtered.length
+  }, [filtered, selectedIds])
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = isIndeterminate
+    }
+  }, [isIndeterminate])
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const filteredIdSet = new Set(filtered.map((c) => c.id))
+      setSelectedIds((prev) => prev.filter((id) => !filteredIdSet.has(id)))
+    } else {
+      const ids = filtered.map((c) => c.id)
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...ids])))
+    }
+  }
+
+  const handleToggleSelect = (id, e) => {
+    e.stopPropagation()
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    )
+  }
+
   return (
     <div>
       <PageHeader
@@ -237,6 +271,29 @@ export function AdminReportsPage() {
         </Select>
       </div>
 
+      {!loadError && !loading && filtered.length > 0 && (
+        <div className="flex items-center justify-between px-1 py-2 mb-3 text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              aria-label="Select all complaints"
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              checked={isAllSelected}
+              ref={selectAllRef}
+              onChange={handleToggleSelectAll}
+            />
+            <span className="font-medium text-gray-700 dark:text-gray-300">
+              Select All ({filtered.length})
+            </span>
+          </label>
+          {selectedIds.length > 0 && (
+            <span className="font-medium text-primary-600 dark:text-primary-400">
+              {selectedIds.length} selected
+            </span>
+          )}
+        </div>
+      )}
+
       {loadError ? (
         <ConnectionErrorBanner onRetry={() => setReloadKey((k) => k + 1)} />
       ) : loading ? (
@@ -261,21 +318,36 @@ export function AdminReportsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((complaint) => {
             const user = userCache[complaint.reportedBy]
+            const isSelected = selectedIds.includes(complaint.id)
             return (
               <Card
                 key={complaint.id}
-                className="cursor-pointer hover:shadow-md transition-shadow"
+                className={`cursor-pointer hover:shadow-md transition-all ${
+                  isSelected
+                    ? 'border-primary-500 ring-2 ring-primary-500/20 bg-primary-50/20 dark:bg-primary-950/20'
+                    : ''
+                }`}
                 onClick={() => navigate(`/admin/reports/${complaint.id}`)}
               >
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-mono text-primary-600 dark:text-primary-400 font-semibold mb-1">
-                        {getDisplayId(complaint)}
-                      </p>
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                        {complaint.title}
-                      </h3>
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select complaint ${getDisplayId(complaint)}`}
+                        className="h-4 w-4 mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer shrink-0"
+                        checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleToggleSelect(complaint.id, e)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-mono text-primary-600 dark:text-primary-400 font-semibold mb-1">
+                          {getDisplayId(complaint)}
+                        </p>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                          {complaint.title}
+                        </h3>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 shrink-0 justify-end">
                       <SlaBadge complaint={complaint} />
@@ -297,6 +369,14 @@ export function AdminReportsPage() {
           })}
         </div>
       )}
+
+      <BulkActionsToolbar
+        selectedIds={selectedIds}
+        complaints={complaints}
+        onClearSelection={() => setSelectedIds([])}
+        onSuccess={() => setSelectedIds([])}
+        actorUid={user?.uid}
+      />
     </div>
   )
 }

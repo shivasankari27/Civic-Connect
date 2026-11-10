@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Camera, Save, Loader2, BellRing } from 'lucide-react'
+import { Camera, Save, Loader2, BellRing, Trophy } from 'lucide-react'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/firebase/services'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -12,6 +12,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { getPushPermissionStatus, requestPushPermission } from '@/firebase/notifications'
+import { useCivicGamification } from '@/hooks/useCivicGamification'
+import { BadgesShowcaseCard } from '@/components/citizen/BadgesShowcaseCard'
+import { CivicChampionLeaderboardCard } from '@/components/citizen/CivicChampionLeaderboardCard'
 import toast from 'react-hot-toast'
 
 export function ProfilePage() {
@@ -24,6 +27,17 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [permissionStatus, setPermissionStatus] = useState(() => getPushPermissionStatus())
   const [requestingPush, setRequestingPush] = useState(false)
+
+  // Live Civic Gamification & Leaderboard State
+  const {
+    badges,
+    score,
+    level,
+    stats: gamificationStats,
+    leaderboard,
+    currentUserRank,
+    loading: gamificationLoading,
+  } = useCivicGamification(user)
 
   const handleEnablePush = async () => {
     setRequestingPush(true)
@@ -102,10 +116,11 @@ export function ProfilePage() {
     <div>
       <PageHeader
         title="Profile"
-        description="Manage your account settings"
+        description="Manage your account settings, civic badges, and community standing"
       />
 
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-3xl space-y-6">
+        {/* User Identity Header Card */}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-6">
@@ -115,21 +130,50 @@ export function ProfilePage() {
                     {initials}
                   </AvatarFallback>
                 </Avatar>
-                <button className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-primary-600 text-white shadow-sm hover:bg-primary-700 transition-colors">
+                <button
+                  type="button"
+                  aria-label="Upload profile photo"
+                  className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-primary-600 text-white shadow-sm hover:bg-primary-700 transition-colors"
+                >
                   <Camera className="h-3.5 w-3.5" />
                 </button>
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{user?.name}</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{user?.email}</p>
-                <span className="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 mt-1 capitalize">
-                  {user?.role}
-                </span>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  <span className="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 capitalize">
+                    {user?.role}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    <Trophy className="h-3 w-3 text-amber-500" />
+                    {level?.title || 'Civic Explorer'}
+                  </span>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
+        {/* Badges & Gamification Showcase Card */}
+        <BadgesShowcaseCard
+          badges={badges}
+          score={score}
+          level={level}
+          stats={gamificationStats}
+          loading={gamificationLoading}
+        />
+
+        {/* Civic Champions Monthly Leaderboard Card */}
+        <CivicChampionLeaderboardCard
+          leaderboard={leaderboard}
+          currentUserRank={currentUserRank}
+          currentUserId={user?.uid}
+          monthName={score?.monthName || 'This Month'}
+          loading={gamificationLoading}
+        />
+
+        {/* Personal Information Form Card */}
         <Card>
           <CardHeader>
             <CardTitle>Personal Information</CardTitle>
@@ -175,6 +219,7 @@ export function ProfilePage() {
           </CardContent>
         </Card>
 
+        {/* Notification Preferences Card */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
