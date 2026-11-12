@@ -69,6 +69,7 @@ export function MyReportsPage() {
   useEffect(() => {
     if (!user) {
       console.log('MyReports: user is null, skipping query')
+      setComplaints([])
       setLoading(false)
       return
     }
@@ -82,7 +83,7 @@ export function MyReportsPage() {
     setLoadError(false)
     setComplaints([])
 
-    // Hydrate the page from IndexedDB immediately while Firestore revalidates.
+    // Read cached reports first so previously viewed reports render immediately.
     const cachePromise = readCachedReports(user.uid)
       .then((record) => {
         cachedRecord = record
@@ -123,13 +124,13 @@ export function MyReportsPage() {
       (snapshot) => {
         if (!active) return
 
-        // Firestore may first emit an unconfirmed local snapshot. Keep the
-        // IndexedDB copy visible until the server confirms the current data.
+        // Wait for a server-confirmed snapshot before replacing the cache.
         if (snapshot.metadata?.fromCache) {
           if (isUnconfirmedEmpty(snapshot)) return
-          const cachedList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-          cachedRecord = { reports: cachedList }
-          setComplaints(sortByCreatedAtDesc(cachedList))
+
+          const localReports = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+          cachedRecord = { reports: localReports }
+          setComplaints(sortByCreatedAtDesc(localReports))
           setLoadError(false)
           setLoading(false)
           return
@@ -137,12 +138,13 @@ export function MyReportsPage() {
 
         serverConfirmed = true
         window.clearTimeout(timeoutId)
-        const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-        console.log('MyReports: received', list.length, 'documents')
-        setComplaints(sortByCreatedAtDesc(list))
+        const reports = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+        console.log('MyReports: received', reports.length, 'documents')
+        setComplaints(sortByCreatedAtDesc(reports))
         setLoadError(false)
         setLoading(false)
-        writeCachedReports(user.uid, list).catch((error) => {
+
+        writeCachedReports(user.uid, reports).catch((error) => {
           console.warn('MyReports: unable to update report cache:', error)
         })
       },
