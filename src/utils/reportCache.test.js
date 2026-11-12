@@ -93,6 +93,7 @@ describe('citizen report IndexedDB cache', () => {
     const cached = await readCachedReports('citizen-1', indexedDB, 2000)
 
     expect(cached.reports[0].createdAt.toDate()).toEqual(date)
+    expect(cached.reports[0].createdAt.toMillis()).toBe(date.getTime())
   })
 
   it('returns null when the citizen has no cached reports', async () => {
