@@ -80,6 +80,7 @@ export function MyReportsPage() {
     console.log('MyReports: fetching issues for uid:', user.uid)
     setLoading(true)
     setLoadError(false)
+    setComplaints([])
 
     // Hydrate the page from IndexedDB immediately while Firestore revalidates.
     const cachePromise = readCachedReports(user.uid)
@@ -127,6 +128,7 @@ export function MyReportsPage() {
         if (snapshot.metadata?.fromCache) {
           if (isUnconfirmedEmpty(snapshot)) return
           const cachedList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+          cachedRecord = { reports: cachedList }
           setComplaints(sortByCreatedAtDesc(cachedList))
           setLoadError(false)
           setLoading(false)
