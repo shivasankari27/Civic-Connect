@@ -48,7 +48,10 @@ function deserializeValue(value) {
   if (value && typeof value === 'object') {
     if (typeof value.__civicConnectTimestamp === 'string') {
       const date = new Date(value.__civicConnectTimestamp)
-      return { toDate: () => new Date(date) }
+      return {
+        toDate: () => new Date(date),
+        toMillis: () => date.getTime(),
+      }
     }
 
     return Object.fromEntries(
