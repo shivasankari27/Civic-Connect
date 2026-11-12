@@ -6,6 +6,11 @@ import { collection, query, where, onSnapshot, doc, deleteDoc } from 'firebase/f
 import { db } from '@/firebase/services'
 import { getDisplayId } from '@/firebase/complaintId'
 import { isUnconfirmedEmpty } from '@/firebase/snapshot'
+import {
+  readCachedReports,
+  writeCachedReports,
+  REPORT_FETCH_TIMEOUT_MS,
+} from '@/utils/reportCache'
 import { useAuth } from '@/hooks/useAuth'
 import { sortByCreatedAtDesc } from '@/utils/sortByCreatedAtDesc'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -67,39 +72,99 @@ export function MyReportsPage() {
       setLoading(false)
       return
     }
+
+    let active = true
+    let serverConfirmed = false
+    let cachedRecord = null
+
     console.log('MyReports: fetching issues for uid:', user.uid)
     setLoading(true)
     setLoadError(false)
+
+    // Hydrate the page from IndexedDB immediately while Firestore revalidates.
+    const cachePromise = readCachedReports(user.uid)
+      .then((record) => {
+        cachedRecord = record
+        if (active && !serverConfirmed && record) {
+          setComplaints(sortByCreatedAtDesc(record.reports))
+          setLoadError(false)
+          setLoading(false)
+        }
+      })
+      .catch((error) => {
+        console.warn('MyReports: unable to read report cache:', error)
+      })
+
     // No orderBy here: where + orderBy on another field needs a composite index,
     // so the results are sorted on the client instead.
     const q = query(
       collection(db, 'issues'),
       where('reportedBy', '==', user.uid)
     )
+
+    const timeoutId = window.setTimeout(async () => {
+      if (!active || serverConfirmed) return
+      await cachePromise
+      if (!active || serverConfirmed) return
+
+      if (cachedRecord) {
+        setComplaints(sortByCreatedAtDesc(cachedRecord.reports))
+        setLoadError(false)
+      } else {
+        setLoadError(true)
+      }
+      setLoading(false)
+    }, REPORT_FETCH_TIMEOUT_MS)
+
     const unsubscribe = onSnapshot(
       q,
       { includeMetadataChanges: true },
       (snapshot) => {
-        if (isUnconfirmedEmpty(snapshot)) {
-          if (!navigator.onLine) {
-            setLoadError(true)
-            setLoading(false)
-          }
+        if (!active) return
+
+        // Firestore may first emit an unconfirmed local snapshot. Keep the
+        // IndexedDB copy visible until the server confirms the current data.
+        if (snapshot.metadata?.fromCache) {
+          if (isUnconfirmedEmpty(snapshot)) return
+          const cachedList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+          setComplaints(sortByCreatedAtDesc(cachedList))
+          setLoadError(false)
+          setLoading(false)
           return
         }
+
+        serverConfirmed = true
+        window.clearTimeout(timeoutId)
         const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
         console.log('MyReports: received', list.length, 'documents')
         setComplaints(sortByCreatedAtDesc(list))
         setLoadError(false)
         setLoading(false)
+        writeCachedReports(user.uid, list).catch((error) => {
+          console.warn('MyReports: unable to update report cache:', error)
+        })
       },
-      (error) => {
+      async (error) => {
         console.error('MyReports Firestore error:', error)
-        setLoadError(true)
+        window.clearTimeout(timeoutId)
+        await cachePromise
+        if (!active) return
+
+        if (cachedRecord) {
+          setComplaints(sortByCreatedAtDesc(cachedRecord.reports))
+          setLoadError(false)
+        } else {
+          setLoadError(true)
+        }
         setLoading(false)
       }
     )
-    return unsubscribe
+
+    return () => {
+      active = false
+      window.clearTimeout(timeoutId)
+      unsubscribe()
+    }
   }, [user, reloadKey])
 
   const filtered = complaints.filter(
